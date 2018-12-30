@@ -1,20 +1,31 @@
 (ns jelly-puzzle.core
-  (:require [quil.core :as q]
+  (:require [clojure.java.io :as io]
+            [clojure.string :as string]
+            [quil.core :as q :include-macros true]
             [quil.middleware :as m]))
 
 (defrecord Game [puzzle key-pressed grid-size])
-(defrecord Puzzle [width height cursor])
+(defrecord Puzzle [width height stage now cursor])
 (defrecord Cursor [x y focusing])
 
 
 (def grid-size 32)
 
+(defn init-stage [state stage-id]
+  (let [fseq (-> (io/resource "stage/stage1.txt")
+                 slurp
+                 string/split-lines)
+        [width height] (->> (string/split (first fseq) #"\s")
+                            (map #(Integer/parseInt %)))]
+    (q/resize-sketch (* width grid-size) (* height grid-size))
+    (assoc state :puzzle
+           (Puzzle. width height (rest fseq) (rest fseq)
+                    (Cursor. 0 0 false)))))
+
 (defn setup-handler []
   (q/color-mode :hsb 1.0)
-  (q/resize-sketch (* 14 grid-size) (* 8 grid-size))
-  (let [init-cursor (Cursor. 0 0 false)
-        init-puzzle (Puzzle. 14 8 init-cursor)]
-    (Game. init-puzzle #{} grid-size)))
+  (-> (Game. nil #{} grid-size)
+      (init-stage 1)))
 
 (defn key-pressed-handler [state event]
   (let [listen-keys #{:up :down :left :right :z :x}]
@@ -29,6 +40,7 @@
       (assoc :key-pressed #{})))
 
 (defn update-with-key [state]
+  "Update state with keyboad input."
   (let [key-pressed (:key-pressed state)]
     (as-> state st
       (cond-> st
@@ -51,8 +63,39 @@
       (key-pressed :down)  (update-in [:puzzle :cursor :y]
                                       (fn [y] (min (dec height) (inc y)))))))
   
+(declare draw-cursor draw-puzzle)
+
 (defn draw-handler [state]
   (q/background 255)
+  (draw-puzzle state)
+  (draw-cursor state))
+
+
+(defn draw-block [left top size color]
+  (let [cfill (q/current-fill)
+        cstroke (q/current-stroke)]
+    (apply q/fill color)
+    (q/stroke 0.0 0.0 0.0) ;; black
+    (q/rect left top size size)
+    ;; restore fill and stroke
+    (q/fill cfill)
+    (q/stroke cstroke)))
+
+(defn draw-puzzle [state]
+  (doseq [[y row] (map vector (range) (get-in state [:puzzle :now]))]
+    (doseq [[x elem] (map vector (range) row)]
+      (let [gsize (:grid-size state)
+            left (* x gsize)
+            top (* y gsize)]
+        (case elem
+          \# (draw-block left top gsize [0.0 0.0 0.5])
+          \r (draw-block left top gsize [0.0 0.2 1.0])
+          \g (draw-block left top gsize [0.33 0.2 1.0])
+          \b (draw-block left top gsize [0.66 0.2 1.0])
+          nil)))
+    (println)))
+
+(defn draw-cursor [state]
   (let [gsize (:grid-size state)
         half-gsize (quot gsize 2)
         cursor (get-in state [:puzzle :cursor])
