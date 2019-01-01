@@ -1,17 +1,15 @@
 (ns jelly-puzzle.core
   (:require [quil.core :as q]
             [quil.middleware :as m]
-            [jelly_puzzle.state]
+            [jelly-puzzle.state]
             [jelly-puzzle.puzzle :as puzzle])
   (:import [jelly_puzzle.state Game]))
 
 
 (defn init-stage [state stage-id]
-  (let [puzzle (puzzle/load-puzzle "stage/stage1.txt")]
+  (let [puzzle (puzzle/load-puzzle "stage/sandbox.txt")]
     (q/resize-sketch (* (:width puzzle) (:grid-size state))
                      (* (:height puzzle) (:grid-size state)))
-    (doseq [[k v] (:blocks puzzle)]
-      (println k v))
     (assoc state :puzzle puzzle)))
 
 (defn setup-handler []
@@ -25,14 +23,14 @@
 
 (defn update-handler [state]
   (as-> state st
-    (update st :puzzle puzzle/update-with-key (:key-pressed st))
+    (update st :puzzle puzzle/update-puzzle (:key-pressed st))
     (assoc st :key-pressed #{})))
 
 (defn draw-handler [state]
   (puzzle/draw-puzzle (:puzzle state) (:grid-size state)))
 
 (q/defsketch jelly-puzzle
-  :title "sandbox"
+  :title "Clojellyのパズル"
   :size [500 500]
   :setup setup-handler
   :update update-handler
