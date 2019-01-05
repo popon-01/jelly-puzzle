@@ -20,14 +20,13 @@
            new-block-grid {}
            target (get-in puzzle [:blocks block-id])]
       (if (nil? target)
-        ;; all grids in the block is updated
         (let [old-block (get-in puzzle' [:blocks block-id])
               new-block (-> new-block-grid keys set)
               new-grids (as-> (:grids puzzle') grids
                           (apply (partial dissoc grids) (vec old-block))
                           (merge grids new-block-grid))]
           {:puzzle (-> puzzle'
-                       (assoc-in [:block block-id] new-block)
+                       (assoc-in [:blocks block-id] new-block)
                        (assoc :grids new-grids))
            :moved? true})
         (let [coord (first target)
@@ -75,9 +74,36 @@
     (if-not (:moved? result)
       result (update result :puzzle move-cursor direction))))
 
+(defn drop-all-block [puzzle]
+  "Drop all blocks by gravity"
+  (letfn [;; update loop
+          (drop-1 [puzzle']
+            (update-with-col
+             {:puzzle puzzle' :updated? false}
+             (-> puzzle' :blocks keys)
+             (fn [now block-id]
+               (let [now-puzzle (:puzzle now)
+                     try (if (= block-id
+                                (get-in now-puzzle [:cursor :target-block]))
+                           (move-block-and-cursor now-puzzle block-id :down)
+                           (move-block now-puzzle block-id :down))]
+                 (if (:moved? try)
+                   (assoc now
+                          :puzzle (:puzzle try)
+                          :updated? true)
+                   now)))))]
+    (loop [puzzle' puzzle]
+      (let [try (drop-1 puzzle')]
+        (if-not (:updated? try)
+          puzzle' (recur (:puzzle try)))))))
+
 (defn merge-block [puzzle]
-  "Merge blocks the grids into block."
+  "Merge the grids into block."
   (letfn [;; Traverse single block.
+          ;; dfs-state :
+          ;; `:puzzle` current puzzle state
+          ;; `:visit` a set which contains coordinates of already visited grids
+          ;; `:grids` a set which includes grids contained in a block
           (dfs [dfs-state coord grid-type]
             (-> dfs-state
                 (update :visit conj coord)
@@ -199,6 +225,7 @@
 (defn update-puzzle [puzzle key-pressed]
   (-> puzzle
       (handle-key key-pressed)
+      drop-all-block
       merge-block))
 
 ;;;;;;;;;; draw function ;;;;;;;;;;
