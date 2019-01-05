@@ -160,14 +160,14 @@
         update-grid-id
         update-cursor-target-block)))
 
-(defn load-puzzle [stage-txt]
-  (let [fseq (-> (io/resource stage-txt)
+(defn load-puzzle [stage-file]
+  (let [fseq (-> (io/resource stage-file)
                  slurp
                  string/split-lines)
         [width height] (->> (string/split (first fseq) #"\s")
                             (map #(Integer/parseInt %)))
         stage-body (rest fseq)]
-    (-> (Puzzle. width height stage-txt {} {} (Cursor. (Coord. 0 0) nil))
+    (-> (Puzzle. width height stage-file {} {} (Cursor. (Coord. 0 0) nil))
         ;; register all grid
         (update-with-col
          (map vector (range) stage-body)
