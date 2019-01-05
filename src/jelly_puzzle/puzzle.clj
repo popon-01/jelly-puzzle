@@ -276,7 +276,7 @@
 ;;;;;;;;;; draw function ;;;;;;;;;;
 (declare draw-grids draw-cursor draw-cleared)
 (defn draw-puzzle [puzzle grid-size]
-  (q/background 255)
+  (q/background 0.0 0.0 1.0)
   (draw-grids (:grids puzzle) grid-size)
   (draw-cursor (:cursor puzzle) grid-size)
   (when (cleared? puzzle)

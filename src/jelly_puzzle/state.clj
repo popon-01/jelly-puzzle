@@ -4,4 +4,5 @@
 (defrecord Cursor [coord target-block])
 (defrecord Grid [type block-id])
 (defrecord Puzzle [width height stage-file grids blocks cursor histrory])
-(defrecord Game [puzzle key-pressed grid-size])
+(defrecord StageSelect [stage])
+(defrecord Game [scene key-pressed grid-size])
