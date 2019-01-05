@@ -167,7 +167,8 @@
         [width height] (->> (string/split (first fseq) #"\s")
                             (map #(Integer/parseInt %)))
         stage-body (rest fseq)]
-    (-> (Puzzle. width height stage-file {} {} (Cursor. (Coord. 0 0) nil))
+    (-> (Puzzle. width height stage-file {} {}
+                 (Cursor. (Coord. 0 0) nil) nil)
         ;; register all grid
         (update-with-col
          (map vector (range) stage-body)
@@ -184,7 +185,28 @@
         ;; init block state
         merge-block)))
 
+(defn save-history [puzzle old-puzzle]
+  "Saves the old state to the histroy"
+  (let [limit 10]
+    (assoc puzzle :history
+           (as-> (:history puzzle) new-histroy
+             (conj new-histroy
+                   {:grids  (:grids old-puzzle)
+                    :blocks (:blocks old-puzzle)
+                    :cursor (:cursor old-puzzle)})
+             (take limit new-histroy)))))
+
+(defn undo-puzzle [puzzle]
+  "Undoes the puzzle"
+  (if (empty? (:history puzzle))
+    puzzle
+    (let [{:keys [grids blocks cursor]} (first (:history puzzle))]
+      (-> puzzle
+          (assoc :grids grids :blocks blocks :cursor cursor)
+          (update :history rest)))))
+
 (defn cleared? [puzzle]
+  "Returns cleared or not"
   (loop [grids (-> puzzle :grids vals)
          color->blocks {}]
     (if (nil? grids)
@@ -219,12 +241,17 @@
     (key-pressed :up)    (move-cursor :up)
     (key-pressed :down)  (move-cursor :down)))
 
-(defn move-block-and-cursor-with-key [puzzle key-pressed]
-  "Move the block and adjust cursor position according to the key input."
-  (let [block-id (get-in puzzle [:cursor :target-block])]
-    (cond-> puzzle
-      (key-pressed :left)  (-> (move-block-and-cursor block-id :left) :puzzle)
-      (key-pressed :right) (-> (move-block-and-cursor block-id :right) :puzzle))))
+(defn proceed-puzzle [puzzle key-pressed]
+  "Move the block and modify puzzle state according to the key input."
+  (if-not (or (key-pressed :left) (key-pressed :right))
+    puzzle
+    (let [block-id (get-in puzzle [:cursor :target-block])
+          try (cond (key-pressed :left)
+                    (move-block-and-cursor puzzle block-id :left)
+                    (key-pressed :right)
+                    (move-block-and-cursor puzzle block-id :right))]
+      (cond-> (:puzzle try)
+        (:moved? try) (save-history puzzle)))))
 
 (defn handle-key [puzzle key-pressed]
   "Update state with keyboad input."
@@ -232,12 +259,15 @@
       (cond-> (key-pressed :z) handle-block-select-key)
       (as-> puzzle'
           (if (some? (get-in puzzle' [:cursor :target-block]))
-            (move-block-and-cursor-with-key puzzle' key-pressed)
+            (proceed-puzzle puzzle' key-pressed)
             (move-cursor-with-key puzzle' key-pressed)))))
 
 (defn update-puzzle [puzzle key-pressed]
-  (if (cleared? puzzle)
-    puzzle
+  (cond
+    (cleared? puzzle) puzzle
+    (key-pressed :r) (load-puzzle (:stage-file puzzle))
+    (key-pressed :u) (undo-puzzle puzzle)
+    :else
     (-> puzzle
         (handle-key key-pressed)
         drop-all-block

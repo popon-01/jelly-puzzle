@@ -17,7 +17,7 @@
   (-> (Game. nil #{} 32) (init-stage 1)))
 
 (defn key-pressed-handler [state event]
-  (let [listen-keys #{:up :down :left :right :z :x}]
+  (let [listen-keys #{:up :down :left :right :z :r :u}]
     (cond-> state
       (listen-keys (:key event)) (update :key-pressed conj (:key event)))))
 
