@@ -184,6 +184,19 @@
         ;; init block state
         merge-block)))
 
+(defn cleared? [puzzle]
+  (loop [grids (-> puzzle :grids vals)
+         color->blocks {}]
+    (if (nil? grids)
+      (reduce (fn [res blocks] (and res (<= (-> blocks distinct count) 1)))
+              true (vals color->blocks))
+      (let [grid (first grids)]
+        (recur (next grids)
+               (cond-> color->blocks
+                 (not (= (:type grid) :floor))
+                 (update (:type grid) conj (:block-id grid))))))))
+
+;;;;;;;;;; controller ;;;;;;;;;;
 (defn handle-block-select-key [puzzle]
   "Handler for the block-select key input."
   (let [cursor (:cursor puzzle)]
@@ -223,17 +236,21 @@
             (move-cursor-with-key puzzle' key-pressed)))))
 
 (defn update-puzzle [puzzle key-pressed]
-  (-> puzzle
-      (handle-key key-pressed)
-      drop-all-block
-      merge-block))
+  (if (cleared? puzzle)
+    puzzle
+    (-> puzzle
+        (handle-key key-pressed)
+        drop-all-block
+        merge-block)))
 
 ;;;;;;;;;; draw function ;;;;;;;;;;
-(declare draw-grids draw-cursor)
+(declare draw-grids draw-cursor draw-cleared)
 (defn draw-puzzle [puzzle grid-size]
   (q/background 255)
   (draw-grids (:grids puzzle) grid-size)
-  (draw-cursor (:cursor puzzle) grid-size))
+  (draw-cursor (:cursor puzzle) grid-size)
+  (when (cleared? puzzle)
+    (draw-cleared (:width puzzle) (:height puzzle) grid-size)))
 
 (defn draw-grid-square [left top size color]
   (let [cfill (q/current-fill)
@@ -267,3 +284,11 @@
       (q/fill 0.32 1.0 1.0)
       (q/ellipse (+ left half-gsize) (+ top half-gsize)
                  half-gsize half-gsize))))
+
+(defn draw-cleared [width height grid-size]
+  (let [sketch-width (* width grid-size)
+        sketch-height (* height grid-size)]
+    (q/fill 0.0 1.0 1.0)
+    (q/text-align :center :center)
+    (q/text-size 32)
+    (q/text "CLEAR" (quot sketch-width 2) (quot sketch-height 2))))
