@@ -1,12 +1,47 @@
 (ns jelly-puzzle.puzzle
   (:require [clojure.java.io :as io]
             [clojure.string :as string]
-            [clojure.set :as set]
-            [quil.core :as q]
-            [jelly_puzzle.state])
-  (:import [jelly_puzzle.state Puzzle Grid Coord Cursor]))
+            [quil.core :as q]))
+
+;;;;;;;;;; data definition ;;;;;;;;;;
+
+;; A coordinate in a grid of a puzzle grid.
+;; x : x-coordinate (number)
+;; y : y-coordinate (number)
+(defrecord Coord [x y])
+
+;; A puzzle cursor.
+;; coord        : a coordinate of cursor (Coord)
+;; target-block : a current selected block id (keyword),
+;;                or nil if no block is selected.
+(defrecord Cursor [coord target-block])
+
+;; A single grid of puzzle.
+;; type     : a type of grid (keyword)
+;; block-id : a block id includes this grid (keyword)
+(defrecord Grid [type block-id])
+
+;; A puzzle board.
+;; width      : width of a puzzle grid (number)
+;; height     : height of a puzzle grid (number)
+;; stage-file : a path of puzzle data file (string)
+;; grids      : a mapping of coordinates (Coord) into grids (Grid)
+;; blocks     : a mapping of block ids (keyword) into sets of coorinates(Coord)
+;; cursor     : a puzzle cursor (Cursor)
+;; history    : a list of previous puzzle board data (saves grids, blocks, cursor)
+(defrecord Puzzle [width height stage-file grids blocks cursor histrory])
+
+;;;;;;;;;; update functions ;;;;;;;;;;
+
+(defn adjust-puzzle-sketch [puzzle grid-size]
+  "Adjusts sketch size to a puzzle boad."
+  (q/resize-sketch (* (:width puzzle) grid-size)
+                   (* (:height puzzle) grid-size)))
 
 (defn update-with-col [val col f]
+  "Updates val with f using each item of col.
+  f should be a function of 2 arguments, the first is val 
+  and the second is the elemets of col."
   (reduce f val col))
 
 (defn move-block [puzzle block-id direction]
@@ -66,7 +101,7 @@
 
 (defn move-block-and-cursor [puzzle block-id direction]
   "Move the block with specified id and adjust cursor position.
-  Specify a direction with :left or :right.
+  Specify a direction with :left :right, or :down.
   Returns map :
     `:puzzle` updated puzzle state
     `:moved?` whether this block is moved or not."
@@ -76,7 +111,9 @@
 
 (defn drop-all-block [puzzle]
   "Drop all blocks by gravity"
-  (letfn [;; update loop
+  (letfn [;; Updates all blocks and returns map :
+          ;;   `:puzzle`   a updated puzzle state
+          ;;   `:updated?` whether there is any update or not
           (drop-1 [puzzle']
             (update-with-col
              {:puzzle puzzle' :updated? false}
@@ -100,10 +137,10 @@
 (defn merge-block [puzzle]
   "Merge the grids into block."
   (letfn [;; Traverse single block.
-          ;; dfs-state :
-          ;; `:puzzle` current puzzle state
-          ;; `:visit` a set which contains coordinates of already visited grids
-          ;; `:grids` a set which includes grids contained in a block
+          ;; Updates dfs-state :
+          ;; `:puzzle` a current puzzle state
+          ;; `:visit`  a set which contains coordinates of already visited grids
+          ;; `:grids`  a set which includes grids contained in a block
           (dfs [dfs-state coord grid-type]
             (-> dfs-state
                 (update :visit conj coord)
@@ -161,6 +198,7 @@
         update-cursor-target-block)))
 
 (defn load-puzzle [stage-file]
+  "Loads a stage from file."
   (let [fseq (-> (io/resource stage-file)
                  slurp
                  string/split-lines)
@@ -169,7 +207,6 @@
         stage-body (rest fseq)]
     (-> (Puzzle. width height stage-file {} {}
                  (Cursor. (Coord. 0 0) nil) nil)
-        ;; register all grid
         (update-with-col
          (map vector (range) stage-body)
          (fn [puzzle' [y row]]
@@ -182,11 +219,10 @@
                 \g (assoc-in puzzle'' [:grids (Coord. x y)] (Grid. :green nil))
                 \b (assoc-in puzzle'' [:grids (Coord. x y)] (Grid. :blue nil))
                 puzzle'')))))
-        ;; init block state
         merge-block)))
 
 (defn save-history [puzzle old-puzzle]
-  "Saves the old state to the histroy"
+  "Saves the old state to the histroy."
   (let [limit 10]
     (assoc puzzle :history
            (as-> (:history puzzle) new-histroy
@@ -197,7 +233,7 @@
              (take limit new-histroy)))))
 
 (defn undo-puzzle [puzzle]
-  "Undoes the puzzle"
+  "Undoes the puzzle."
   (if (empty? (:history puzzle))
     puzzle
     (let [{:keys [grids blocks cursor]} (first (:history puzzle))]
@@ -206,7 +242,7 @@
           (update :history rest)))))
 
 (defn cleared? [puzzle]
-  "Returns cleared or not"
+  "Returns cleared or not."
   (loop [grids (-> puzzle :grids vals)
          color->blocks {}]
     (if (nil? grids)
@@ -219,6 +255,7 @@
                  (update (:type grid) conj (:block-id grid))))))))
 
 ;;;;;;;;;; controller ;;;;;;;;;;
+
 (defn handle-block-select-key [puzzle]
   "Handler for the block-select key input."
   (let [cursor (:cursor puzzle)]
@@ -242,7 +279,7 @@
     (key-pressed :down)  (move-cursor :down)))
 
 (defn proceed-puzzle [puzzle key-pressed]
-  "Move the block and modify puzzle state according to the key input."
+  "Move the block according to the key input and modify the puzzle state."
   (if-not (or (key-pressed :left) (key-pressed :right))
     puzzle
     (let [block-id (get-in puzzle [:cursor :target-block])
@@ -263,6 +300,7 @@
             (move-cursor-with-key puzzle' key-pressed)))))
 
 (defn update-puzzle [puzzle key-pressed]
+  "Updates the puzzle game schene."
   (cond
     (cleared? puzzle) puzzle
     (key-pressed :r) (load-puzzle (:stage-file puzzle))
@@ -273,16 +311,10 @@
         drop-all-block
         merge-block)))
 
-;;;;;;;;;; draw function ;;;;;;;;;;
-(declare draw-grids draw-cursor draw-clear)
-(defn draw-puzzle [puzzle grid-size]
-  (q/background 0.0 0.0 1.0)
-  (draw-grids puzzle grid-size)
-  (draw-cursor (:cursor puzzle) grid-size)
-  (when (cleared? puzzle)
-    (draw-clear (:width puzzle) (:height puzzle) grid-size)))
+;;;;;;;;;; draw functions ;;;;;;;;;;
 
 (defn draw-grids [puzzle grid-size]
+  "Draws each grids in the puzzle."
   (doseq [[coord grid] (:grids puzzle)]
     (let [left   (* (:x coord) grid-size)
           right  (+ left grid-size)
@@ -308,6 +340,7 @@
             (q/line begin end)))))))
 
 (defn draw-cursor [cursor grid-size]
+  "Draws the cursor."
   (let [half-gsize (quot grid-size 2)
         left (* (get-in cursor [:coord :x]) grid-size)
         top (* (get-in cursor [:coord :y]) grid-size)]
@@ -318,9 +351,19 @@
                half-gsize half-gsize)))
 
 (defn draw-clear [width height grid-size]
+  "Display the text 'CLEAR'."
   (let [sketch-width (* width grid-size)
         sketch-height (* height grid-size)]
     (q/fill 0.0 1.0 1.0)
     (q/text-align :center :center)
     (q/text-size 32)
     (q/text "CLEAR" (quot sketch-width 2) (quot sketch-height 2))))
+
+(defn draw-puzzle [puzzle grid-size]
+  "Draws the puzzle game schene."
+  (q/background 0.0 0.0 1.0)
+  (draw-grids puzzle grid-size)
+  (draw-cursor (:cursor puzzle) grid-size)
+  (when (cleared? puzzle)
+    (draw-clear (:width puzzle) (:height puzzle) grid-size)))
+

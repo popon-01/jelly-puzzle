@@ -1,87 +1,78 @@
 (ns jelly-puzzle.core
   (:require [quil.core :as q]
             [quil.middleware :as m]
-            [jelly-puzzle.state]
+            [jelly-puzzle.stage-select :as stage-select]
             [jelly-puzzle.puzzle :as puzzle])
-  (:import [jelly_puzzle.state Puzzle StageSelect Game]))
+  (:import [jelly_puzzle.puzzle Puzzle]
+           [jelly_puzzle.stage_select StageSelect]))
 
-
-(defrecord StageData [name file])
-(defn make-stage-list [& name-and-files]
-  "make stage data list."
-  (assert (even? (count name-and-files)))
-  (reduce (fn [v [name file]] (conj v (StageData. name file)))
-          [] (partition 2 name-and-files)))
-
-(def stage-list (make-stage-list "sandbox" "sandbox.txt"
-                                 "stage1" "stage1.txt"))
-
-;; Width and height of stage select scene
-(def stage-select-grid [10 10])
+;; Data of a whole game
+;; scene       : current game scene (StageSelect or Puzzle)
+;; key-pressed : a set of last pressed keys (keyword)
+;; grid-size   : a size of single grid (number)
+(defrecord Game [scene key-pressed grid-size])
 
 (defprotocol Scene
   "A protocol for game scenes."
   (update-scene [this key-pressed]
-    "Returns updated scene.")
+    "Returns the updated scene.")
   (switch-scene [this key-pressed]
-    "Returns the next game scene, or nil if scene switching do not happened.")
+    "Returns the next game scene if the scene is switched, otherwise nil.")
   (adjust-sketch [this grid-size]
-    "Resize the sketch with this game scene")
+    "Resizes the sketch with this game scene")
   (draw-scene [this grid-size]
-    "Draws Scene."))
+    "Draws this scene."))
+
+(defn switch-from-puzzle [puzzle key-pressed]
+  "Switches from the puzzle game scene."
+  (when (and (puzzle/cleared? puzzle) (key-pressed :z))
+    (stage-select/make-stage-select)))
+
+(defn switch-from-stage-select [stage-select key-pressed]
+  "Switches from the stage select scene."
+  (when (key-pressed :z)
+    (let [file-name (get-in (:stage-list stage-select)
+                            [(:index stage-select) :file])
+          stage-file (str "stage/" file-name)]
+      (puzzle/load-puzzle stage-file))))
 
 (extend-protocol Scene
   Puzzle
   (update-scene [puzzle key-pressed]
     (puzzle/update-puzzle puzzle key-pressed))
   (switch-scene [puzzle key-pressed]
-    (when (and (puzzle/cleared? puzzle) (key-pressed :z))
-      (StageSelect. 0)))
+    (switch-from-puzzle puzzle key-pressed))
   (adjust-sketch [puzzle grid-size]
-    (q/resize-sketch (* (:width puzzle) grid-size)
-                     (* (:height puzzle) grid-size)))
+    (puzzle/adjust-puzzle-sketch puzzle grid-size))
   (draw-scene [puzzle grid-size]
     (puzzle/draw-puzzle puzzle grid-size))
 
   StageSelect
   (update-scene [stage-select key-pressed]
-    (let [num-of-stage (count stage-list)]
-      (cond-> stage-select
-        (key-pressed :left)  (update :stage #(mod (+ (dec %) num-of-stage)
-                                                  num-of-stage))
-        (key-pressed :right) (update :stage #(mod (inc %) num-of-stage)))))
+    (stage-select/update-stage-select stage-select key-pressed))
   (switch-scene [stage-select key-pressed]
-    (when (key-pressed :z)
-      (let [file-name (get-in stage-list [(:stage stage-select) :file])
-            stage-file (str "stage/" file-name)]
-        (puzzle/load-puzzle stage-file))))
+    (switch-from-stage-select stage-select key-pressed))
   (adjust-sketch [stage-select grid-size]
-    (let [[width height] stage-select-grid]
-      (q/resize-sketch (* width grid-size) (* height grid-size))))
+    (stage-select/adjust-stage-select-sketch grid-size))
   (draw-scene [stage-select grid-size]
-    (q/background 0.0 0.0 1.0)
-    (let [[width height] stage-select-grid
-          sketch-width (* width grid-size)
-          sketch-height (* height grid-size)
-          stage-name (get-in stage-list [(:stage stage-select) :name])]
-      (q/fill 0.0 0.0 0.0)
-      (q/text-align :center :center)
-      (q/text-size 32)
-      (q/text stage-name (quot sketch-width 2) (quot sketch-height 2)))))
+    (stage-select/draw-stage-select stage-select grid-size)))
 
 (defn setup-handler []
+  "Sets up the sketch."
   (q/color-mode :hsb 1.0)
   (let [grid-size 32
-        init-scene (StageSelect. 0)]
+        init-scene (stage-select/make-stage-select)]
     (adjust-sketch init-scene grid-size)
     (Game. init-scene #{} grid-size)))
 
 (defn key-pressed-handler [game event]
+  "Listens key inputs."
   (let [listen-keys #{:up :down :left :right :z :r :u}]
     (cond-> game
       (listen-keys (:key event)) (update :key-pressed conj (:key event)))))
 
 (defn update-handler [game]
+  "Updates the sketch."
   (let [key-pressed (:key-pressed game)]
     (as-> game game'
       (update game' :scene update-scene key-pressed)
@@ -92,6 +83,7 @@
       (assoc game' :key-pressed #{}))))
 
 (defn draw-handler [game]
+  "Draws the sketch."
   (draw-scene (:scene game) (:grid-size game)))
 
 (q/defsketch jelly-puzzle
