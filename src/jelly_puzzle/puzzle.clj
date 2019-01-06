@@ -274,48 +274,50 @@
         merge-block)))
 
 ;;;;;;;;;; draw function ;;;;;;;;;;
-(declare draw-grids draw-cursor draw-cleared)
+(declare draw-grids draw-cursor draw-clear)
 (defn draw-puzzle [puzzle grid-size]
   (q/background 0.0 0.0 1.0)
-  (draw-grids (:grids puzzle) grid-size)
+  (draw-grids puzzle grid-size)
   (draw-cursor (:cursor puzzle) grid-size)
   (when (cleared? puzzle)
-    (draw-cleared (:width puzzle) (:height puzzle) grid-size)))
+    (draw-clear (:width puzzle) (:height puzzle) grid-size)))
 
-(defn draw-grid-square [left top size color]
-  (let [cfill (q/current-fill)
-        cstroke (q/current-stroke)]
-    (apply q/fill color)
-    (q/stroke 0.0 0.0 0.0) ;; black
-    (q/rect left top size size)
-    ;; restore fill and stroke
-    (q/fill cfill)
-    (q/stroke cstroke)))
-
-(defn draw-grids [grids grid-size]
-  (doseq [[coord grid] grids]
-    (let [left (* (:x coord) grid-size)
-          top (* (:y coord) grid-size)]
-      (case (:type grid)
-        :floor (draw-grid-square left top grid-size [0.0 0.0 0.5])
-        :red (draw-grid-square left top grid-size [0.0 0.2 1.0])
-        :green (draw-grid-square left top grid-size [0.33 0.2 1.0])
-        :blue (draw-grid-square left top grid-size [0.66 0.2 1.0])
-        nil))))
+(defn draw-grids [puzzle grid-size]
+  (doseq [[coord grid] (:grids puzzle)]
+    (let [left   (* (:x coord) grid-size)
+          right  (+ left grid-size)
+          top    (* (:y coord) grid-size)
+          bottom (+ top grid-size)
+          color  (case (:type grid)
+                   :floor [0.0 0.0 0.5]
+                   :red   [0.0 0.2 1.0]
+                   :green [0.33 0.2 1.0]
+                   :blue  [0.66 0.2 1.0])]
+      (apply q/fill color)
+      (q/no-stroke)
+      (q/rect left top grid-size grid-size)
+      (q/stroke 0.0 0.0 0.0)
+      (doseq [[dx dy begin end] [[1  0 [right top]    [right bottom]]
+                                 [-1 0 [left  top]    [left  bottom]]
+                                 [0  1 [left  bottom] [right bottom]]
+                                 [0 -1 [left  top]    [right top]   ]]]
+        (let [adj-coord (-> coord (update :x + dx) (update :y + dy))]
+          (when-not (and (some? (get-in puzzle [:grids adj-coord :block-id]))
+                         (= (get-in puzzle [:grids adj-coord :block-id])
+                            (:block-id grid)))
+            (q/line begin end)))))))
 
 (defn draw-cursor [cursor grid-size]
   (let [half-gsize (quot grid-size 2)
         left (* (get-in cursor [:coord :x]) grid-size)
         top (* (get-in cursor [:coord :y]) grid-size)]
-    (q/stroke 0.32 1.0 1.0)
-    (q/no-fill)
-    (q/rect left top grid-size grid-size)
-    (when (some? (:target-block cursor))
-      (q/fill 0.32 1.0 1.0)
-      (q/ellipse (+ left half-gsize) (+ top half-gsize)
-                 half-gsize half-gsize))))
+    (q/no-stroke)
+    (if (some? (:target-block cursor))
+      (q/fill 0.0 1.0 1.0) (q/fill 0.33 1.0 1.0))
+    (q/ellipse (+ left half-gsize) (+ top half-gsize)
+               half-gsize half-gsize)))
 
-(defn draw-cleared [width height grid-size]
+(defn draw-clear [width height grid-size]
   (let [sketch-width (* width grid-size)
         sketch-height (* height grid-size)]
     (q/fill 0.0 1.0 1.0)
